@@ -1,0 +1,317 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>割り勘精算</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap">
+<style>
+/* Layout: 左に入力の3ステップ、右にレシート風の精算書。狭い幅では縦に積む */
+:root {
+  --bg: #eef1f0;
+  --surface: #fbfcfb;
+  --ink: #17211f;
+  --muted: #5b6965;
+  --line: #d3dad7;
+  --accent: #0f6b5c;
+  --accent-ink: #ffffff;
+  --accent-soft: #dcebe7;
+  --organizer: #8a5200;
+  --organizer-soft: #f3e6cf;
+  --warn: #b4381f;
+  --warn-soft: #f8e1db;
+  --font-ui: "Zen Kaku Gothic New", "Hiragino Kaku Gothic ProN", "Yu Gothic", system-ui, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101615; --surface: #172120; --ink: #e6eeeb; --muted: #94a39e; --line: #2b3835;
+    --accent: #4fc3a9; --accent-ink: #08201b; --accent-soft: #1b3a34;
+    --organizer: #e8b04a; --organizer-soft: #3a2f17;
+    --warn: #ff8a70; --warn-soft: #3d201a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101615; --surface: #172120; --ink: #e6eeeb; --muted: #94a39e; --line: #2b3835;
+  --accent: #4fc3a9; --accent-ink: #08201b; --accent-soft: #1b3a34;
+  --organizer: #e8b04a; --organizer-soft: #3a2f17;
+  --warn: #ff8a70; --warn-soft: #3d201a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-ui); font-size: 15px; line-height: 1.6;
+  padding-block: 28px 48px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1040px; margin: 0 auto; }
+header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+h1 { font-size: 1.7rem; margin: 0; letter-spacing: .02em; text-wrap: balance; }
+.sub { color: var(--muted); margin: 2px 0 0; font-size: .9rem; }
+.layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr); gap: 20px; align-items: start; }
+@media (max-width: 800px) { .layout { grid-template-columns: minmax(0, 1fr); } }
+.steps { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.step { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 16px 18px 18px; }
+.step h2 { margin: 0 0 12px; font-size: 1rem; display: flex; align-items: center; gap: 10px; }
+.badge { font-family: var(--font-num); font-size: .78rem; font-weight: 600; background: var(--accent); color: var(--accent-ink); width: 1.7rem; height: 1.7rem; border-radius: 50%; display: grid; place-items: center; flex: none; }
+.fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+label { display: block; font-size: .82rem; color: var(--muted); margin-bottom: 4px; }
+.input { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 4px; background: var(--bg); padding: 0 10px; }
+.input:focus-within { outline: 2px solid var(--accent); outline-offset: 1px; }
+.input input { flex: 1; min-width: 0; border: 0; background: transparent; color: var(--ink); font: 600 1.15rem var(--font-num); padding: 9px 0; text-align: right; outline: none; }
+.input span { color: var(--muted); margin-left: 6px; font-size: .9rem; }
+.hint { margin: 10px 0 0; font-size: .85rem; color: var(--muted); }
+.hint b { color: var(--ink); font-family: var(--font-num); font-weight: 600; }
+.note { margin: 10px 0 0; padding: 8px 10px; border-radius: 4px; background: var(--warn-soft); color: var(--warn); font-size: .85rem; }
+.note[hidden] { display: none; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; }
+button { font: 500 .85rem var(--font-ui); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: 4px; padding: 6px 12px; cursor: pointer; }
+button:hover { border-color: var(--accent); color: var(--accent); }
+button:focus-visible, .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sample { font-size: .75rem; color: var(--organizer); background: var(--organizer-soft); padding: 2px 8px; border-radius: 3px; }
+
+/* 精算書 */
+.receipt { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 20px 20px 22px; min-width: 0;
+  background-image: linear-gradient(135deg, transparent 75%, var(--bg) 75%), linear-gradient(225deg, transparent 75%, var(--bg) 75%);
+  background-size: 0 0; }
+.receipt h2 { margin: 0 0 4px; font-size: 1.05rem; letter-spacing: .12em; }
+.receipt .date { font-size: .8rem; color: var(--muted); margin: 0 0 14px; }
+.row { display: flex; align-items: baseline; gap: 8px; padding: 3px 0; min-width: 0; }
+.row .k { flex: none; }
+.row .dots { flex: 1; border-bottom: 1px dotted var(--muted); transform: translateY(-4px); min-width: 12px; opacity: .6; }
+.row .v { flex: none; font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.row.sub-total { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+.row.big .v { font-size: 1.15rem; color: var(--accent); }
+.row.org .v, .row.org .k { color: var(--organizer); }
+.sect { margin: 16px 0 6px; font-size: .78rem; color: var(--muted); letter-spacing: .1em; }
+.seg { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; }
+.seg label { margin: 0; }
+.seg input { position: absolute; opacity: 0; pointer-events: none; }
+.seg span { display: block; padding: 6px 12px; border: 1px solid var(--line); border-radius: 4px; cursor: pointer; font-size: .88rem; color: var(--ink); background: var(--bg); }
+.seg input:checked + span { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.table-wrap { overflow-x: auto; margin-top: 8px; }
+table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+th, td { padding: 6px 8px; text-align: right; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th:first-child, td:first-child { text-align: left; }
+th { font-weight: 500; color: var(--muted); font-size: .78rem; }
+td { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+td:first-child { font-family: var(--font-ui); }
+tr.sel td { background: var(--accent-soft); font-weight: 600; }
+tr.clickable { cursor: pointer; }
+.check { margin-top: 12px; font-size: .8rem; color: var(--muted); }
+.copyrow { margin-top: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.status { font-size: .82rem; color: var(--accent); }
+@media (prefers-reduced-motion: no-preference) { .badge, button, .seg span { transition: background .15s, border-color .15s, color .15s; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div>
+      <h1>割り勘精算</h1>
+      <p class="sub">集金して、余ったお金を分け前として返すまでを計算します。</p>
+    </div>
+    <div class="btns">
+      <span class="sample" id="sampleTag">入力例を表示中</span>
+      <button type="button" id="clearBtn">入力をクリア</button>
+    </div>
+  </header>
+
+  <div class="layout">
+    <div class="steps">
+      <section class="step">
+        <h2><span class="badge">1</span>必要な金額と人数</h2>
+        <div class="fields">
+          <div>
+            <label for="total">必要合計金額</label>
+            <div class="input"><input id="total" type="number" inputmode="numeric" min="0" step="1" value="23700"><span>円</span></div>
+          </div>
+          <div>
+            <label for="people">人数</label>
+            <div class="input"><input id="people" type="number" inputmode="numeric" min="1" step="1" value="7"><span>人</span></div>
+          </div>
+        </div>
+        <p class="hint" id="perHeadHint"></p>
+      </section>
+
+      <section class="step">
+        <h2><span class="badge">2</span>集金した合計</h2>
+        <div class="fields">
+          <div>
+            <label for="collected">集金した金額の合計</label>
+            <div class="input"><input id="collected" type="number" inputmode="numeric" min="0" step="1" value="28000"><span>円</span></div>
+          </div>
+        </div>
+        <p class="hint" id="collectHint"></p>
+        <p class="note" id="collectNote" hidden></p>
+      </section>
+
+      <section class="step">
+        <h2><span class="badge">3</span>幹事の取り分</h2>
+        <div class="fields">
+          <div>
+            <label for="organizer">幹事の取り分</label>
+            <div class="input"><input id="organizer" type="number" inputmode="numeric" min="0" step="1" value="500"><span>円</span></div>
+          </div>
+        </div>
+        <p class="hint">幹事の手間賃や立て替えのお礼など、先に確保しておく金額です。</p>
+        <p class="note" id="orgNote" hidden></p>
+      </section>
+    </div>
+
+    <section class="receipt" aria-live="polite">
+      <h2>精算書</h2>
+      <p class="date" id="today"></p>
+
+      <div class="row"><span class="k">集金した合計</span><span class="dots"></span><span class="v" id="rCollected"></span></div>
+      <div class="row"><span class="k">必要合計金額</span><span class="dots"></span><span class="v" id="rTotal"></span></div>
+      <div class="row"><span class="k">幹事の取り分</span><span class="dots"></span><span class="v" id="rOrg"></span></div>
+      <div class="row sub-total"><span class="k">余り（分け前のもと）</span><span class="dots"></span><span class="v" id="rSurplus"></span></div>
+      <div class="row"><span class="k" id="rDivLabel">人数で割る</span><span class="dots"></span><span class="v" id="rExact"></span></div>
+
+      <p class="sect">分け前の丸め方（切り捨て）</p>
+      <div class="seg" role="radiogroup" aria-label="分け前の丸め方" id="seg">
+        <label><input type="radio" name="unit" value="0"><span>細かく</span></label>
+        <label><input type="radio" name="unit" value="10" checked><span>10円</span></label>
+        <label><input type="radio" name="unit" value="100"><span>100円</span></label>
+        <label><input type="radio" name="unit" value="1000"><span>1000円</span></label>
+      </div>
+
+      <div class="row big"><span class="k">参加者1人への分け前</span><span class="dots"></span><span class="v" id="rPayout"></span></div>
+      <div class="row"><span class="k" id="rPayTotalLabel">分け前の合計</span><span class="dots"></span><span class="v" id="rPayTotal"></span></div>
+      <div class="row org"><span class="k">丸めで出た端数（幹事へ）</span><span class="dots"></span><span class="v" id="rRemainder"></span></div>
+      <div class="row org big sub-total"><span class="k">幹事の最終取り分</span><span class="dots"></span><span class="v" id="rFinal"></span></div>
+
+      <p class="sect">丸め方ごとの比較</p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>丸め方</th><th>1人への分け前</th><th>端数</th><th>幹事の最終取り分</th></tr></thead>
+          <tbody id="cmp"></tbody>
+        </table>
+      </div>
+      <p class="check" id="checkLine"></p>
+
+      <div class="copyrow">
+        <button type="button" id="copyBtn">結果をコピー</button>
+        <span class="status" id="copyStatus"></span>
+      </div>
+    </section>
+  </div>
+</div>
+
+<script>
+(function () {
+  var UNITS = [0, 10, 100, 1000];
+  var $ = function (id) { return document.getElementById(id); };
+  var yen = function (n) { return Math.round(n * 100) / 100; };
+  var fmt = function (n) { return yen(n).toLocaleString('ja-JP', { maximumFractionDigits: 2 }); };
+  var money = function (n) { return (n < 0 ? '−' : '') + fmt(Math.abs(n)) + '円'; };
+  var label = function (u) { return u === 0 ? '細かく' : u + '円'; };
+
+  // 計算本体。丸めは切り捨て。端数は幹事の取り分に足す。
+  function calc(total, people, collected, organizer) {
+    var perHead = total / people;
+    var surplus = collected - total - organizer;
+    var exact = surplus / people;
+    function payoutFor(u) {
+      if (surplus <= 0) return { unit: u, each: 0, sum: 0, rem: 0, final: organizer };
+      var each = u === 0 ? exact : Math.floor(surplus / (people * u)) * u;
+      var sum = each * people;
+      var rem = surplus - sum;
+      return { unit: u, each: each, sum: sum, rem: rem, final: organizer + rem };
+    }
+    return { perHead: perHead, perHeadCeil: Math.ceil(perHead), surplus: surplus, exact: exact, rows: UNITS.map(payoutFor) };
+  }
+  window.__calc = calc;
+
+  function num(id) { var v = parseFloat($(id).value); return isFinite(v) && v >= 0 ? v : 0; }
+  function selectedUnit() { return parseInt(document.querySelector('input[name="unit"]:checked').value, 10); }
+  var lastText = '';
+
+  function render() {
+    var total = num('total'), people = Math.max(1, Math.floor(num('people'))), collected = num('collected'), org = num('organizer');
+    var r = calc(total, people, collected, org);
+    var minCollect = r.perHeadCeil * people;
+
+    $('perHeadHint').innerHTML = '1人あたり <b>' + fmt(r.perHead) + '円</b>。集金は <b>' + fmt(r.perHeadCeil) + '円</b> 以上にすると、' + people + '人で <b>' + fmt(minCollect) + '円</b> 以上になります。';
+    $('collectHint').innerHTML = '1人平均 <b>' + fmt(collected / people) + '円</b>';
+    var cn = $('collectNote');
+    if (collected < total) { cn.hidden = false; cn.textContent = '集金額が必要合計金額より ' + fmt(total - collected) + '円 足りません。'; }
+    else if (collected < minCollect) { cn.hidden = false; cn.textContent = '1人あたりの金額以上で集金すると ' + fmt(minCollect) + '円 以上になります。いまの合計はそれより ' + fmt(minCollect - collected) + '円 少ないです。'; }
+    else { cn.hidden = true; }
+    var on = $('orgNote');
+    if (r.surplus < 0 && collected >= total) { on.hidden = false; on.textContent = '幹事の取り分が余りを ' + fmt(-r.surplus) + '円 上回っています。'; }
+    else { on.hidden = true; }
+
+    $('rCollected').textContent = money(collected);
+    $('rTotal').textContent = '−' + money(total);
+    $('rOrg').textContent = '−' + money(org);
+    $('rSurplus').textContent = money(r.surplus);
+    $('rDivLabel').textContent = '÷ ' + people + '人（細かく計算）';
+    $('rExact').textContent = money(r.exact) + ' /人';
+
+    var u = selectedUnit();
+    var cur = r.rows[UNITS.indexOf(u)];
+    $('rPayout').textContent = money(cur.each);
+    $('rPayTotalLabel').textContent = '分け前の合計（' + fmt(cur.each) + '円 × ' + people + '人）';
+    $('rPayTotal').textContent = money(cur.sum);
+    $('rRemainder').textContent = money(cur.rem);
+    $('rFinal').textContent = money(cur.final);
+
+    var body = $('cmp'); body.innerHTML = '';
+    r.rows.forEach(function (row) {
+      var tr = document.createElement('tr');
+      tr.className = 'clickable' + (row.unit === u ? ' sel' : '');
+      [label(row.unit), money(row.each), money(row.rem), money(row.final)].forEach(function (t) {
+        var td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
+      });
+      tr.addEventListener('click', function () {
+        document.querySelector('input[name="unit"][value="' + row.unit + '"]').checked = true; render();
+      });
+      body.appendChild(tr);
+    });
+
+    var ok = Math.abs(cur.sum + cur.final - (Math.max(r.surplus, 0) + org)) < 0.005;
+    $('checkLine').textContent = '確認: 分け前の合計 ' + fmt(cur.sum) + '円 ＋ 幹事 ' + fmt(cur.final) + '円 ＝ 余りと取り分の合計 ' + fmt(Math.max(r.surplus, 0) + org) + '円 ' + (ok ? '（一致）' : '（不一致）');
+
+    lastText = [
+      '【割り勘精算】',
+      '必要合計金額: ' + money(total) + ' / 人数: ' + people + '人 / 1人あたり: ' + fmt(r.perHead) + '円',
+      '集金した合計: ' + money(collected),
+      '幹事の取り分: ' + money(org),
+      '余り: ' + money(r.surplus) + '（1人あたり ' + fmt(r.exact) + '円）',
+      '丸め方: ' + label(u),
+      '参加者1人への分け前: ' + money(cur.each),
+      '幹事の最終取り分: ' + money(cur.final) + '（取り分 ' + fmt(org) + '円 + 端数 ' + fmt(cur.rem) + '円）'
+    ].join('\n');
+  }
+
+  ['total', 'people', 'collected', 'organizer'].forEach(function (id) {
+    $(id).addEventListener('input', function () { $('sampleTag').hidden = true; render(); });
+  });
+  document.querySelectorAll('input[name="unit"]').forEach(function (el) { el.addEventListener('change', render); });
+  $('clearBtn').addEventListener('click', function () {
+    ['total', 'collected', 'organizer'].forEach(function (id) { $(id).value = ''; });
+    $('people').value = '';
+    $('sampleTag').hidden = true; $('total').focus(); render();
+  });
+  $('copyBtn').addEventListener('click', function () {
+    var s = $('copyStatus');
+    function done(ok) { s.textContent = ok ? 'コピーしました' : '選択してコピーしてください'; setTimeout(function () { s.textContent = ''; }, 2500); }
+    try {
+      navigator.clipboard.writeText(lastText).then(function () { done(true); }, function () { fallback(); });
+    } catch (e) { fallback(); }
+    function fallback() {
+      var ta = document.createElement('textarea'); ta.value = lastText; ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta); ta.select();
+      var ok = false; try { ok = document.execCommand('copy'); } catch (e) {}
+      document.body.removeChild(ta); done(ok);
+    }
+  });
+
+  var d = new Date();
+  $('today').textContent = d.getFullYear() + '年' + (d.getMonth() + 1) + '月' + d.getDate() + '日';
+  render();
+})();
+</script>
+
+</body></html>
