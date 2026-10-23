@@ -70,6 +70,15 @@ button:hover { border-color: var(--accent); color: var(--accent); }
 button:focus-visible, .seg input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sample { font-size: .75rem; color: var(--organizer); background: var(--organizer-soft); padding: 2px 8px; border-radius: 3px; }
 
+.callout { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 14px 16px 16px; margin-top: 14px; }
+.callout .lead { font-size: .76rem; font-weight: 500; }
+.callout .amt { font: 700 clamp(2rem, 8vw, 2.8rem)/1.1 var(--font-num); letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+.callout .tail { font-size: .92rem; font-weight: 700; }
+.row.payout .k { font-weight: 700; }
+.row.payout .v { font-size: clamp(1.9rem, 7vw, 2.5rem); line-height: 1.2; }
+.custom { margin: 12px 0 6px; }
+.custom .input { max-width: 240px; }
+
 /* 精算書 */
 .receipt { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 20px 20px 22px; min-width: 0;
   background-image: linear-gradient(135deg, transparent 75%, var(--bg) 75%), linear-gradient(225deg, transparent 75%, var(--bg) 75%);
@@ -130,6 +139,7 @@ tr.clickable { cursor: pointer; }
             <div class="input"><input id="people" type="number" inputmode="numeric" min="1" step="1" value="7"><span>人</span></div>
           </div>
         </div>
+        <div class="callout" aria-live="polite"><span class="lead">1人あたり</span><span class="amt" id="callAmt"></span><span class="tail">円以上集金してください。</span></div>
         <p class="hint" id="perHeadHint"></p>
       </section>
 
@@ -168,15 +178,22 @@ tr.clickable { cursor: pointer; }
       <div class="row sub-total"><span class="k">余り（分け前のもと）</span><span class="dots"></span><span class="v" id="rSurplus"></span></div>
       <div class="row"><span class="k" id="rDivLabel">人数で割る</span><span class="dots"></span><span class="v" id="rExact"></span></div>
 
-      <p class="sect">分け前の丸め方（切り捨て）</p>
+      <p class="sect">分け前の決め方（丸めは切り捨て）</p>
       <div class="seg" role="radiogroup" aria-label="分け前の丸め方" id="seg">
         <label><input type="radio" name="unit" value="0"><span>細かく</span></label>
         <label><input type="radio" name="unit" value="10" checked><span>10円</span></label>
         <label><input type="radio" name="unit" value="100"><span>100円</span></label>
         <label><input type="radio" name="unit" value="1000"><span>1000円</span></label>
+        <label><input type="radio" name="unit" value="custom"><span>任意</span></label>
       </div>
 
-      <div class="row big"><span class="k">参加者1人への分け前</span><span class="dots"></span><span class="v" id="rPayout"></span></div>
+      <div class="custom" id="customRow" hidden>
+        <label for="customEach">任意の分け前（1人あたり）</label>
+        <div class="input"><input id="customEach" type="number" inputmode="numeric" min="0" step="1" placeholder="例: 600"><span>円</span></div>
+      </div>
+      <p class="note" id="customNote" hidden></p>
+
+      <div class="row big payout"><span class="k">参加者1人への分け前</span><span class="dots"></span><span class="v" id="rPayout"></span></div>
       <div class="row"><span class="k" id="rPayTotalLabel">分け前の合計</span><span class="dots"></span><span class="v" id="rPayTotal"></span></div>
       <div class="row org"><span class="k">丸めで出た端数（幹事へ）</span><span class="dots"></span><span class="v" id="rRemainder"></span></div>
       <div class="row org big sub-total"><span class="k">幹事の最終取り分</span><span class="dots"></span><span class="v" id="rFinal"></span></div>
@@ -205,10 +222,10 @@ tr.clickable { cursor: pointer; }
   var yen = function (n) { return Math.round(n * 100) / 100; };
   var fmt = function (n) { return yen(n).toLocaleString('ja-JP', { maximumFractionDigits: 2 }); };
   var money = function (n) { return (n < 0 ? '−' : '') + fmt(Math.abs(n)) + '円'; };
-  var label = function (u) { return u === 0 ? '細かく' : u + '円'; };
+  var label = function (u) { return u === 'custom' ? '任意' : u === 0 ? '細かく' : u + '円'; };
 
   // 計算本体。丸めは切り捨て。端数は幹事の取り分に足す。
-  function calc(total, people, collected, organizer) {
+  function calc(total, people, collected, organizer, customEach) {
     var perHead = total / people;
     var surplus = collected - total - organizer;
     var exact = surplus / people;
@@ -219,20 +236,32 @@ tr.clickable { cursor: pointer; }
       var rem = surplus - sum;
       return { unit: u, each: each, sum: sum, rem: rem, final: organizer + rem };
     }
-    return { perHead: perHead, perHeadCeil: Math.ceil(perHead), surplus: surplus, exact: exact, rows: UNITS.map(payoutFor) };
+    var custom = null;
+    if (customEach !== null && customEach !== undefined) {
+      var cs = customEach * people;
+      custom = { unit: 'custom', each: customEach, sum: cs, rem: surplus - cs, final: organizer + surplus - cs };
+    }
+    return { perHead: perHead, perHeadCeil: Math.ceil(perHead), surplus: surplus, exact: exact, rows: UNITS.map(payoutFor), custom: custom };
   }
   window.__calc = calc;
 
   function num(id) { var v = parseFloat($(id).value); return isFinite(v) && v >= 0 ? v : 0; }
-  function selectedUnit() { return parseInt(document.querySelector('input[name="unit"]:checked').value, 10); }
+  function selectedUnit() { var v = document.querySelector('input[name="unit"]:checked').value; return v === 'custom' ? 'custom' : parseInt(v, 10); }
   var lastText = '';
 
   function render() {
     var total = num('total'), people = Math.max(1, Math.floor(num('people'))), collected = num('collected'), org = num('organizer');
-    var r = calc(total, people, collected, org);
+    var cRaw = $('customEach').value;
+    var customEach = cRaw === '' ? null : Math.max(0, parseFloat(cRaw) || 0);
+    var r = calc(total, people, collected, org, customEach);
+    var cNote = $('customNote');
+    $('customRow').hidden = selectedUnit() !== 'custom';
+    if (r.custom && r.custom.rem < 0 && selectedUnit() === 'custom') { cNote.hidden = false; cNote.textContent = '任意の分け前の合計が余りを ' + fmt(-r.custom.rem) + '円 上回っています。その分は幹事の取り分から引いています。'; }
+    else { cNote.hidden = true; }
+    $('callAmt').textContent = fmt(Math.ceil(total / people));
     var minCollect = r.perHeadCeil * people;
 
-    $('perHeadHint').innerHTML = '1人あたり <b>' + fmt(r.perHead) + '円</b>。集金は <b>' + fmt(r.perHeadCeil) + '円</b> 以上にすると、' + people + '人で <b>' + fmt(minCollect) + '円</b> 以上になります。';
+    $('perHeadHint').innerHTML = '計算上は <b>' + fmt(r.perHead) + '円</b>（端数は切り上げ）。' + people + '人から集めると合計 <b>' + fmt(minCollect) + '円</b> 以上になります。';
     $('collectHint').innerHTML = '1人平均 <b>' + fmt(collected / people) + '円</b>';
     var cn = $('collectNote');
     if (collected < total) { cn.hidden = false; cn.textContent = '集金額が必要合計金額より ' + fmt(total - collected) + '円 足りません。'; }
@@ -250,18 +279,20 @@ tr.clickable { cursor: pointer; }
     $('rExact').textContent = money(r.exact) + ' /人';
 
     var u = selectedUnit();
-    var cur = r.rows[UNITS.indexOf(u)];
-    $('rPayout').textContent = money(cur.each);
+    var cur = u === 'custom' ? r.custom : r.rows[UNITS.indexOf(u)];
+    var blank = cur === null;
+    if (blank) cur = { unit: 'custom', each: 0, sum: 0, rem: 0, final: org };
+    $('rPayout').textContent = blank ? '未入力' : money(cur.each);
     $('rPayTotalLabel').textContent = '分け前の合計（' + fmt(cur.each) + '円 × ' + people + '人）';
     $('rPayTotal').textContent = money(cur.sum);
     $('rRemainder').textContent = money(cur.rem);
     $('rFinal').textContent = money(cur.final);
 
     var body = $('cmp'); body.innerHTML = '';
-    r.rows.forEach(function (row) {
+    r.rows.concat([r.custom || { unit: 'custom', blank: true }]).forEach(function (row) {
       var tr = document.createElement('tr');
       tr.className = 'clickable' + (row.unit === u ? ' sel' : '');
-      [label(row.unit), money(row.each), money(row.rem), money(row.final)].forEach(function (t) {
+      (row.blank ? [label(row.unit), '—', '—', '—'] : [label(row.unit), money(row.each), money(row.rem), money(row.final)]).forEach(function (t) {
         var td = document.createElement('td'); td.textContent = t; tr.appendChild(td);
       });
       tr.addEventListener('click', function () {
@@ -272,6 +303,7 @@ tr.clickable { cursor: pointer; }
 
     var ok = Math.abs(cur.sum + cur.final - (Math.max(r.surplus, 0) + org)) < 0.005;
     $('checkLine').textContent = '確認: 分け前の合計 ' + fmt(cur.sum) + '円 ＋ 幹事 ' + fmt(cur.final) + '円 ＝ 余りと取り分の合計 ' + fmt(Math.max(r.surplus, 0) + org) + '円 ' + (ok ? '（一致）' : '（不一致）');
+    if (blank) $('checkLine').textContent = '任意の分け前を入力すると、幹事の最終取り分を確認できます。';
 
     lastText = [
       '【割り勘精算】',
@@ -288,9 +320,12 @@ tr.clickable { cursor: pointer; }
   ['total', 'people', 'collected', 'organizer'].forEach(function (id) {
     $(id).addEventListener('input', function () { $('sampleTag').hidden = true; render(); });
   });
-  document.querySelectorAll('input[name="unit"]').forEach(function (el) { el.addEventListener('change', render); });
+  document.querySelectorAll('input[name="unit"]').forEach(function (el) { el.addEventListener('change', function () { render(); if (el.value === 'custom') $('customEach').focus(); }); });
+  $('customEach').addEventListener('input', function () {
+    document.querySelector('input[name="unit"][value="custom"]').checked = true; render();
+  });
   $('clearBtn').addEventListener('click', function () {
-    ['total', 'collected', 'organizer'].forEach(function (id) { $(id).value = ''; });
+    ['total', 'collected', 'organizer', 'customEach'].forEach(function (id) { $(id).value = ''; });
     $('people').value = '';
     $('sampleTag').hidden = true; $('total').focus(); render();
   });
